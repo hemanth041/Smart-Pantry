@@ -1,0 +1,190 @@
+<!DOCTYPE htmzl>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grocery Expiry Manager</title>
+    <style>
+        * {
+            color: #1b07fa;
+        }
+
+        body {
+            font: 16px/1.5 Arial, sans-serif;
+            background: #f3f4f6;
+            margin: 0;
+            padding: 2rem;
+            background-image: url(Images/1624848.jpg);
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: #040404;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+        }
+
+        form {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        form input {
+            flex: 1;
+            padding: .5rem;
+        }
+
+        form button {
+            padding: .5rem 1rem;
+            cursor: pointer;
+        }
+
+        .warning {
+            color: #b71c1c;
+            font-weight: bold;
+            margin: .5rem 0;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            background: #e8f5e9;
+            margin: .5rem 0;
+            padding: .5rem 1rem;
+            border-left: 5px solid #43a047;
+        }
+
+        li.expiring {
+            background: #ffebee;
+            border-color: #e53935;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Grocery Expiry Manager</h1>
+        <form id="item-form">
+            <input name="name" type="text" placeholder="Name" required />
+            <input name="quantity" type="text" placeholder="Quantity" required />
+            <input name="expiry" type="number" placeholder="Expires in (days)" min="0" required />
+            <button type="submit">Add Item</button>
+        </form>
+        <section id="warnings"></section>
+        <h2>Items Sorted by Expiry →</h2>
+        <ul id="expiry-list"></ul>
+    </div>
+    <script>
+
+        const STORAGE_KEY = 'groceryItems';
+        function saveItems(arr) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(arr.map(i => ({ ...i, ts: Date.now() }))));
+        }
+        function loadItems() {
+            const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+            return stored.map(i => ({ name: i.name, quantity: i.quantity, expiryDays: i.expiryDays, id: Math.random() }));
+        }
+
+
+        class GroceryItem {
+            constructor({ name, quantity, expiryDays, id }) {
+                Object.assign(this, { name, quantity, expiryDays, id });
+            }
+        }
+
+        class PriorityQueue {
+            constructor() { this._ = []; }
+            get size() { return this._.length; }
+            enqueue(x) {
+                this._.push(x);
+                let i = this.size - 1;
+                while (i > 0) {
+                    let p = (i - 1) >> 1;
+                    if (this._[i].expiryDays >= this._[p].expiryDays) break;
+                    [this._[i], this._[p]] = [this._[p], this._[i]];
+                    i = p;
+                }
+            }
+            dequeue() {
+                if (!this.size) return null;
+                const top = this._[0];
+                const last = this._.pop();
+                if (this.size) {
+                    this._[0] = last;
+                    let i = 0;
+                    while (true) {
+                        let left = 2 * i + 1, right = 2 * i + 2, smallest = i;
+                        if (left < this.size && this._[left].expiryDays < this._[smallest].expiryDays) smallest = left;
+                        if (right < this.size && this._[right].expiryDays < this._[smallest].expiryDays) smallest = right;
+                        if (smallest === i) break;
+                        [this._[i], this._[smallest]] = [this._[smallest], this._[i]];
+                        i = smallest;
+                    }
+                }
+                return top;
+            }
+            toSortedArray() {
+                const copy = [...this._];
+                const res = [];
+                while (this.size) res.push(this.dequeue());
+                this._ = copy;
+                return res;
+            }
+        }
+
+
+        const form = document.getElementById('item-form');
+        const listEl = document.getElementById('expiry-list');
+        const warnEl = document.getElementById('warnings');
+        const pq = new PriorityQueue();
+
+
+        loadItems().forEach(o => pq.enqueue(new GroceryItem(o)));
+        render();
+
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            const name = form.name.value.trim();
+            const quantity = form.quantity.value.trim();
+            const expiryDays = parseInt(form.expiry.value, 10);
+            if (!name || !quantity || isNaN(expiryDays) || expiryDays < 0) return;
+            const item = new GroceryItem({ name, quantity, expiryDays, id: Date.now() });
+            pq.enqueue(item);
+            persist();
+            render();
+            form.reset();
+        });
+
+        function render() {
+            listEl.innerHTML = ''; warnEl.innerHTML = '';
+            pq.toSortedArray().forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item.name} — Qty: ${item.quantity}, Expires in ${item.expiryDays} day(s)`;
+                if (item.expiryDays <= 2) {
+                    li.classList.add('expiring');
+                    const w = document.createElement('div');
+                    w.className = 'warning';
+                    w.textContent = `⚠ WARNING: "${item.name}" is expiring soon!`;
+                    warnEl.appendChild(w);
+                }
+                listEl.appendChild(li);
+            });
+        }
+
+        function persist() {
+            saveItems(pq.toSortedArray().map(i => ({
+                name: i.name, quantity: i.quantity, expiryDays: i.expiryDays
+            })));
+        }
+    </script>
+</body>
+
+</html>-
